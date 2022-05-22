@@ -12,6 +12,15 @@ cd WGSUniFrac-reproducibles
 conda env create -f data/wgsunifrac.yml
 conda env create -f data/qiime2.yml
 ```
+### Additional pre-requisites (install as needed)
+
+* Grinder: for simulating amplicon and WGS reads. 
+  * https://github.com/zyxue/biogrinder
+* mOTUs: for profiling WGS reads into taxonomic profiles.
+  * https://github.com/motu-tool/mOTUs
+
+* wget
+  * `brew install wget` with Homebrew or install via other methods
 
 ### 1.1 On taxonomic data converted from phylogenetic data
 
