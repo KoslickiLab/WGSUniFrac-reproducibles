@@ -668,6 +668,84 @@ def normalize_samples(samples_list):
             if prediction.percentage > 0:
                 prediction.percentage = (prediction.percentage / sum_per_rank[prediction.rank]) * 100.0
 
+#main functions
+def EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q):
+    '''
+    (Z, diffab) = EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+    This function takes the ancestor dictionary Tint, the lengths dictionary lint, the basis nodes_in_order
+    and two probability vectors P and Q (typically P = envs_prob_dict[samples[i]], Q = envs_prob_dict[samples[j]]).
+    Returns the weighted Unifrac distance Z and the flow F. The flow F is a dictionary with keys of the form (i,j) where
+    F[(i,j)] == num means that in the calculation of the Unifrac distance, a total mass of num was moved from the node
+    nodes_in_order[i] to the node nodes_in_order[j].
+    '''
+    num_nodes = len(nodes_in_order)
+    Z = 0
+    diffab = dict()
+    partial_sums = P - Q
+    for i in range(num_nodes - 1):
+        val = partial_sums[i]
+        partial_sums[Tint[i]] += val
+        if val != 0:
+            diffab[(i, Tint[i])] = lint[i, Tint[i]] * val  # Captures diffab
+        Z += lint[i, Tint[i]] * abs(val)
+    return (Z, diffab)
+
+def pairwise_unifrac(dir, plot_title="plot", alpha=-1, show=False):
+    '''
+    Computes pairwise unifrac distance among profiles in a given directory
+    :param dir: a directory containing profile files
+    :return: a matrix of pairwise distances
+    '''
+    cur_dir = os.getcwd()
+    file_lst = os.listdir(dir) #list files in the directory
+    #print(file_lst)
+    os.chdir(dir)
+    if '.DS_Store' in file_lst:
+        file_lst.remove('.DS_Store')
+    sample_lst = [os.path.splitext(profile)[0].split('.')[0] for profile in file_lst] #e.g.env1sam10
+   #create metadata
+    metadata = dict()
+    for name in sample_lst:
+        env = name[3]
+        metadata[name] = {'environment': env}
+    # enumerate sample_lst, for filling matrix
+    id_dict = dict()
+    for i, id in enumerate(file_lst):
+        id_dict[id] = i
+    #initialize matrix
+    dim = len(file_lst)
+    dist_matrix = np.zeros(shape=(dim, dim))
+    for pair in it.combinations(file_lst, 2):
+        id_1,id_2 = pair[0], pair[1]
+        i,j = id_dict[id_1], id_dict[id_2]
+        profile_list1 = open_profile_from_tsv(id_1, False)
+        profile_list2 = open_profile_from_tsv(id_2, False)
+        name1, metadata1, profile1 = profile_list1[0]
+        name2, metadata2, profile2 = profile_list2[0]
+        profile1 = Profile(sample_metadata=metadata1, profile=profile1, branch_length_fun=lambda x: x**alpha)
+        profile2 = Profile(sample_metadata=metadata2, profile=profile2, branch_length_fun=lambda x: x**alpha)
+        #(Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_no_normalize(profile2)
+        (Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+        (weighted, _) = EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+        dist_matrix[i][j] = dist_matrix[j][i] = weighted
+    os.chdir(cur_dir)
+    label = list(map(lambda x: x[3], sample_lst))
+    # print(label)
+    #score = silhouette_score(dist_matrix, label, metric="precomputed")
+    #print("silhouette score is: %d" %score)
+    #view_df = dm.to_data_frame()
+    #view_df.to_csv('./data/test_df.txt', sep="\t")
+    if show is True:
+        df = pd.DataFrame.from_dict(metadata, orient='index')
+        dm = DistanceMatrix(dist_matrix, sample_lst)
+        dist_pc = pcoa(dm)
+        dist_pc.plot(df=df, column="environment", cmap="Set1", title=plot_title)
+        print("showing plot")
+        plt.show()
+    #plt.savefig('data/wgs_pcoa.png')
+    return sample_lst, dist_matrix, metadata
+
+
 #exp 1
 def run_one(dist_dict, tax_dict, num_org, num_sample, Range, dissimilarity, run, out_dir):
     '''
@@ -699,6 +777,7 @@ def create_data_simple(num_org, num_sample, sample_range, distance_dict, tax_dic
     :param tax_dict: otu:taxid dict
     :return:
     '''
+    rank_list = (["superkingdom", "phylum", "class", "order", "family", "genus", "species"])
     node1 = random.choice(list(distance_dict.keys()))
     node2 = distance_dict[node1][similarity]
     #for test only
@@ -708,6 +787,7 @@ def create_data_simple(num_org, num_sample, sample_range, distance_dict, tax_dic
     data_dict = dict()
     env1_nodes = distance_dict[node1][:sample_range - 1]
     env2_nodes = distance_dict[node2][:sample_range - 1]
+    remove_list = set()
     #update the 2 lists above to contain Node object instead
     for i, node in enumerate(env1_nodes):
         #create Nodes, update tax
@@ -715,12 +795,24 @@ def create_data_simple(num_org, num_sample, sample_range, distance_dict, tax_dic
         if int(new_node.tax) != ncbi.get_lineage(new_node.tax)[-1]:
             new_node.tax = ncbi.get_lineage(new_node.tax)[-1]
         env1_nodes[i] = new_node
+        if check_rank(new_node.tax) is False:
+            remove_list.add(new_node)
+            print("remove ", new_node.tax)
     for i, node in enumerate(env2_nodes):
         new_node = Node(name=node, tax=tax_dict[node])
         if int(new_node.tax) != ncbi.get_lineage(new_node.tax)[-1]:
             new_node.tax = ncbi.get_lineage(new_node.tax)[-1]
         env2_nodes[i] = new_node
+        if check_rank(new_node.tax) is False:
+            print("remove ", new_node.tax)
+            remove_list.add(new_node)
     #create sample
+    if len(remove_list) > 0:
+        env1_nodes = list(filter(lambda i:i not in remove_list, env1_nodes))
+        env2_ndoes = list(filter(lambda i:i not in remove_list, env2_nodes))
+    print(len(env1_nodes), " env1 nodes")
+    print(len(env2_nodes), " env2 nodes")
+
     if num_org >= sample_range:
         for i in range(num_sample):
             env1_key = "{}{}".format('env1sam', i)
@@ -764,7 +856,7 @@ def create_biom_table(table_id, data, filename, normalize=False):
             ab = ab + halfnorm.rvs()
             df.at[node.name, key] = ab
     df = df.fillna(.0)
-    print(df)
+    #print(df)
     table = Table(data=df.to_numpy(), observation_ids=otu_ids, sample_ids=sample_id, observation_metadata=None,
                   sample_metadata=None, table_id=table_id)
     normed = table.norm(axis='sample', inplace=False)
@@ -804,10 +896,15 @@ def create_profile(node_list, outdir, filename):
     :param filename:
     :return:
     '''
+    rank_list = (["superkingdom", "phylum", "class", "order", "family", "genus", "species"])
     ab_dict=dict()
     for node in node_list:
         lin = ncbi.get_lineage(node.tax) #lineage
         lin_dict = ncbi.get_rank(lin) #id:rank
+        #check if all ranks are present
+        for rank in rank_list:
+            if rank not in lin_dict.values():
+                continue
         lin_dict_reverse = {y: x for x, y in lin_dict.items()} #rank:id
         if node.tax != lin[-1]: #in case the id is obsolete and translated to another
             node.tax = lin[-1]
@@ -818,14 +915,6 @@ def create_profile(node_list, outdir, filename):
         ab_dict[node.tax]+=node.abundance
     unique_nodes = list(map(lambda x: Node(name=x, tax=x, abundance=ab_dict[x]), list(ab_dict.keys())))
     id_list = list(ab_dict.keys())
-    '''
-    filtered_list = filter_id_list(id_list)
-    filtered_list = list(map(int, filtered_list))
-    print("length after filtering is %s " % len(filtered_list))
-    if len(filtered_list) == 0:
-        print("nothing is left.")
-        return
-    '''
     outfile = outdir + '/' + filename
     f = open(outfile, "w+")
     f.write("# Taxonomic Profiling Output\n"
@@ -834,16 +923,15 @@ def create_profile(node_list, outdir, filename):
             "@Ranks:superkingdom|phylum|class|order|family|genus|species\n"
             "@TaxonomyID:ncbi-taxonomy_DATE\n"
             "@@TAXID	RANK	TAXPATH	TAXPATHSN	PERCENTAGE\n")
-    rank_list = (["superkingdom", "phylum", "class", "order", "family", "genus", "species"])
     rank_dict = dict()
     for rank in rank_list:
         rank_dict[rank] = []
     rank_list.reverse()
     #update abundance information
-    print("here are the nodes")
-    print(len(unique_nodes))
-    print(list(map(lambda x: x.tax, unique_nodes)))
-    print(list(map(lambda x:x.abundance, unique_nodes)))
+    #print("here are the nodes")
+    #print(len(unique_nodes))
+    #print(list(map(lambda x: x.tax, unique_nodes)))
+    #print(list(map(lambda x:x.abundance, unique_nodes)))
     for id in id_list:
         lin_list = ncbi.get_lineage(id)  # get lineage
         lin_dict = ncbi.get_rank(lin_list)  # create dict id:rank
@@ -862,9 +950,9 @@ def create_profile(node_list, outdir, filename):
                 rank_dict[rank].append(cur_node)
             #cur_abund = cur_node.abundance
     rank_list.reverse()
-    for k, v in rank_dict.items():
-        print(k)
-        print(len(list(v)))
+    #for k, v in rank_dict.items():
+    #    print(k)
+    #    print(len(list(v)))
     #print out
     for rank in rank_list:
         rank_pos = rank_list.index(rank)
@@ -885,6 +973,84 @@ def create_profile(node_list, outdir, filename):
             f.write("\n")
     f.close()
     return
+
+
+#OGU experiments
+def get_ogu_vs_wgsunifrac_df(dir, save):
+    '''
+    Produce a file with the following columns: range, dissimilarity, silhouette, data_type, sample_id
+    param: dir containing all experiment files, which contains profiles and ogu matrix.
+    '''
+    col_names = ["range", "dissimilarity", "Silhouette", "data_type", "sample_id"]
+    cur_dir = os.getcwd()
+    exp_lst = os.listdir(dir)
+    if '.DS_Store' in exp_lst:
+        exp_lst.remove('.DS_Store')
+    exp_lst = list(set(map(lambda x:re.findall("(.*)-", x)[0], exp_lst))) #remove -1, -2 etc. suffix
+    os.chdir(dir)
+    sil_score_ogu = []
+    sil_score_wgs = []
+    Range = []
+    dissimilarity = []
+    for exp in exp_lst:
+        rg = int(re.findall("r(.*)d", exp)[0])
+        Range.append(rg)
+        dissim = int(re.findall("d(.*)", exp)[0])
+        dissimilarity.append(dissim)
+        this_sil_score_ogu = []
+        this_sil_score_wgs = []
+        for i in range(5):
+            exp_repeat = exp + '-' + str(i+1)
+            os.chdir(exp_repeat)  # individual run
+            #get ogu score
+            dist_matrix_ogu = pd.read_table("exported/distance-matrix.tsv", index_col=0)
+            label_ogu = list(map(lambda x: x[3], dist_matrix_ogu)) #which environment
+            score_ogu = silhouette_score(dist_matrix_ogu, label_ogu, metric="precomputed")
+            this_sil_score_ogu.append(score_ogu)
+            #get wgs score
+            sample_lst_wgs, dist_matrix_wgs, metadata = pairwise_unifrac('profiles', alpha=-1, show=False)
+            label_wgs = list(map(lambda x: x[3], sample_lst_wgs))
+            score_wgs = silhouette_score(dist_matrix_wgs, label_wgs, metric="precomputed")
+            this_sil_score_wgs.append(score_wgs)
+            os.chdir('..')
+        ave_sil_ogu = np.mean(this_sil_score_ogu)
+        ave_sil_wgs = np.mean(this_sil_score_wgs)
+        sil_score_ogu.append(ave_sil_ogu)
+        sil_score_wgs.append(ave_sil_wgs)
+        print(exp)
+        print("average OGU score: ", ave_sil_ogu)
+        print("average WGSUniFrac score: ", ave_sil_wgs)
+    
+    df_ogu = pd.DataFrame(columns=col_names, index=range(len(exp_lst)))
+    df_ogu["data_type"] = "OGU"
+    df_ogu["sample_id"] = exp_lst
+    df_ogu["range"] = Range
+    df_ogu["dissimilarity"] = dissimilarity
+    df_ogu["Silhouette"] = sil_score_ogu
+    df_wgs = pd.DataFrame(columns=col_names, index=range(len(exp_lst)))
+    df_wgs["data_type"] = "wgs"
+    df_wgs["sample_id"] = exp_lst
+    df_wgs["range"] = Range
+    df_wgs["dissimilarity"] = dissimilarity
+    df_wgs["silhouette"] = sil_score_wgs
+    df_combined = pd.concat([df_ogu, df_wgs])
+    print(df_combined)
+    os.chdir(cur_dir)
+    df_combined.to_csv(save_as, sep="\t")
+    return df_combined
+    return
+
+def get_ogu_vs_wgsunifrac_plot(dataframe_file, x, save):
+    '''
+    :param: dataframe_file. A dataframe file with the following columns: range, dissimilarity, silhouette, data_type, sample_id
+    :param: file_name: file name to be saved as
+    :param: x-asix: range or dissimilarity
+    '''
+    df = pd.read_table(dataframe_file, index_col=0)
+    #sns.set_theme(style="ticks", palette="pastel")
+    sns.lineplot(x=x, y="Silhouette", hue="data_type", data=df)
+    plt.savefig(save)
+
 
 ### helper functions
 def get_dist_dict(file):
@@ -929,3 +1095,21 @@ def _get_node_from_taxid(taxid, node_list):
     for node in node_list:
         if int(node.tax) == int(taxid):
             return node
+
+def check_rank(id):
+    '''
+    Check if all ranks are present
+    :param id: a taxid to be checked
+    :return: nothing if any of the ranks is missing. otherwise return id
+    '''
+    rank_list = (["superkingdom", "phylum", "class", "order", "family", "genus", "species"])
+    try:
+        lineage = ncbi.get_lineage(id)  # get lineage dict
+    except ValueError:
+        return False
+    ranks = ncbi.get_rank(lineage).values()
+    for r in rank_list:
+        if r not in ranks:
+            print("rank %s not present" % r)
+            return False
+    return True
