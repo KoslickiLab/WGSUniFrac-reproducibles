@@ -981,7 +981,7 @@ def get_ogu_vs_wgsunifrac_df(dir, save):
     Produce a file with the following columns: range, dissimilarity, silhouette, data_type, sample_id
     param: dir containing all experiment files, which contains profiles and ogu matrix.
     '''
-    col_names = ["range", "dissimilarity", "Silhouette", "data_type", "sample_id"]
+    col_names = ["range", "dissimilarity", "Silhouette", "method", "sample_id"]
     cur_dir = os.getcwd()
     exp_lst = os.listdir(dir)
     if '.DS_Store' in exp_lst:
@@ -1022,21 +1022,21 @@ def get_ogu_vs_wgsunifrac_df(dir, save):
         print("average WGSUniFrac score: ", ave_sil_wgs)
     
     df_ogu = pd.DataFrame(columns=col_names, index=range(len(exp_lst)))
-    df_ogu["data_type"] = "OGU"
+    df_ogu["method"] = "OGU"
     df_ogu["sample_id"] = exp_lst
     df_ogu["range"] = Range
     df_ogu["dissimilarity"] = dissimilarity
     df_ogu["Silhouette"] = sil_score_ogu
     df_wgs = pd.DataFrame(columns=col_names, index=range(len(exp_lst)))
-    df_wgs["data_type"] = "wgs"
+    df_wgs["method"] = "WGSUniFrac"
     df_wgs["sample_id"] = exp_lst
     df_wgs["range"] = Range
     df_wgs["dissimilarity"] = dissimilarity
-    df_wgs["silhouette"] = sil_score_wgs
+    df_wgs["Silhouette"] = sil_score_wgs
     df_combined = pd.concat([df_ogu, df_wgs])
     print(df_combined)
     os.chdir(cur_dir)
-    df_combined.to_csv(save_as, sep="\t")
+    df_combined.to_csv(save, sep="\t")
     return df_combined
     return
 
@@ -1048,7 +1048,7 @@ def get_ogu_vs_wgsunifrac_plot(dataframe_file, x, save):
     '''
     df = pd.read_table(dataframe_file, index_col=0)
     #sns.set_theme(style="ticks", palette="pastel")
-    sns.lineplot(x=x, y="Silhouette", hue="data_type", data=df)
+    sns.lineplot(x=x, y="Silhouette", hue="method", data=df)
     plt.savefig(save)
 
 
