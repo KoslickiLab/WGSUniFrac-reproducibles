@@ -51,15 +51,15 @@ bash get_16s_distance_matrix_with_qiime_exp1.sh results/exp1/testDissimilarity
 
 ```
 conda activate wgsunifrac
-python get_combined_dataframe_exp1.py -d results/exp1/testRange -a -1 -s 'results/exp1/combined_dataframe_range.txt'
-python get_combined_dataframe_exp1.py -d results/exp1/testDissimilarity -a -1 -s 'results/exp1/combined_dataframe_dissimilarity.txt'
+python get_combined_dataframe.py -d results/exp1/testRange -a -1 -s 'results/exp1/combined_dataframe_range.txt' -t exp1
+python get_combined_dataframe.py -d results/exp1/testDissimilarity -a -1 -s 'results/exp1/combined_dataframe_dissimilarity.txt' -t exp1
 ```
 
 5. Get boxplots from the dataframe.
 
 ```
-python generate_boxplot.py -f reproducibles/exp1/combined_dataframe_range.txt -x range -y silhouette -s 'reproducibles/exp1/range_vs_silhouette_boxplot.png' 
-python generate_boxplot.py -f reproducibles/exp1/combined_dataframe_dissimilarity.txt -x dissimilarity -y silhouette -s 'reproducibles/exp1/dissimilarity_vs_silhouette_boxplot.png'
+python generate_plot.py -f results/exp1/combined_dataframe_range.txt -x range -y Silhouette -s 'results/exp1/range_vs_silhouette_boxplot.png' 
+python generate_plot.py -f results/exp1/combined_dataframe_dissimilarity.txt -x dissimilarity -y Silhouette -s 'results/exp1/dissimilarity_vs_silhouette_boxplot.png'
 ```
 
 ### 1.2 Model-based branch length assignment
@@ -67,10 +67,35 @@ python generate_boxplot.py -f reproducibles/exp1/combined_dataframe_dissimilarit
 The exponent of the branch length function defined can be adjusted by adjusting the -a parameter. Below is an example of setting the branch length function exponent to 0, i.e. all the branches are assigned the same length. All plots were generated in this manner.
 
 ```
-python get_combined_dataframe_exp1.py -d results/exp1/testRange -a 0 -s 'results/exp1/combined_dataframe_range_bf0.txt'
-python get_combined_dataframe_exp1.py -d results/exp1/testDissimilarity -a 0 -s 'results/exp1/combined_dataframe_dissimilarity_bf0.txt'
-python generate_boxplot.py -f results/exp1/combined_dataframe_range_bf0.txt -x range -y silhouette -s 'results/exp1/range_vs_silhouette_boxplot.png' 
-python generate_boxplot.py -f results/exp1/combined_dataframe_dissimilarity_bf0.txt -x dissimilarity -y silhouette -s 'results/exp1/dissimilarity_vs_silhouette_boxplot.png'
+python get_combined_dataframe.py -d results/exp1/testRange -a 0 -s 'results/exp1/combined_dataframe_range_bf0.txt' -t exp1
+python get_combined_dataframe.py -d results/exp1/testDissimilarity -a 0 -s 'results/exp1/combined_dataframe_dissimilarity_bf0.txt' -t exp1
+python generate_plot.py -f results/exp1/combined_dataframe_range_bf0.txt -x range -y silhouette -s 'results/exp1/range_vs_silhouette_boxplot.png' 
+python generate_plot.py -f results/exp1/combined_dataframe_dissimilarity_bf0.txt -x dissimilarity -y silhouette -s 'results/exp1/dissimilarity_vs_silhouette_boxplot.png'
 ```
+
+### 1.3 Data-driven branch lengths assignment using GTDB
+
+1. Acquire data
+
+```
+conda activate wgsunifrac
+bash get_data_GTDB.sh 
+```
+
+#### 1.3.1 GTDB vs. reciprocal model branch lengths assignment
+
+```
+mkdir results/GTDB
+mkdir results/GTDB/exp1
+python get_GTDB_input_1.py -od results/GTDB/exp1
+bash qiime_procedures_GTDB.sh results/GTDB/exp1/testDissimilarity 
+bash qiime_procedures_GTDB.sh results/GTDB/exp1/testRange &
+python get_combined_dataframe.py -d results/GTDB/exp1/testDissimilarity -a -1 -s 'results/GTDB/exp1/testDissimilarity_combined_df.txt' -t GTDB1
+python get_combined_dataframe.py -d results/exp1/GTDB/testRange -a -1 -s 'results/GTDB/exp1/testRange_combined_df.txt' -t GTDB1
+python generate_plot.py -d data/results/GTDB/exp1/testDissimilarity -a -1 -s "results/GTDB/exp1/testDissimilarity_combined_df.txt" 
+python generate_plot.py -d data/results/GTDB/exp1/testRange -a -1 -s "results/GTDB/exp1/testRange_combined_df.txt" 
+```
+
+#### 1.3.2 GTDB taxonomy vs. NCBI taxonomy
 
 

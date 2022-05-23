@@ -7,7 +7,7 @@ def main():
     parser = argparse.ArgumentParser(description="Generate the input data for the first part of the GTDB experiments")
     parser.add_argument('-od', '--out_dir', type=str, help="Output directory.")
 
-    cur_dir = os.getwd()
+    cur_dir = os.getcwd()
     args = parser.parse_args()
     out_dir = args.out_dir
     dist_matrix_file = 'data/bac120_valid_distance_matrix.txt'

@@ -974,6 +974,66 @@ def create_profile(node_list, outdir, filename):
     f.close()
     return
 
+def get_dataframe(dir, alpha, save_as):
+    col_names = ["range", "dissimilarity", "silhouette", "Calinski-Harabasz", "Davies-Bouldin", "data_type", "sample_id"]
+    file_lst = os.listdir(dir)
+    cur_dir = os.getcwd()
+    save_file_name = cur_dir + '/' + save_as
+    print("Dataframe will be saved as: ", save_file_name)
+    open(save_file_name, 'w+')
+    os.chdir(dir)
+    sil_score_16s = []
+    sil_score_wgs = []
+    calinski_16s = []
+    calinski_wgs = []
+    davies_16s = []
+    davies_wgs = []
+    Range = []
+    similarity = []
+    for file in file_lst:
+        os.chdir(file) #individual run
+        #get 16s score
+        rg = int(re.findall("env2r(.*)d", file)[0])
+        Range.append(rg)
+        sim = int(re.findall("d(.*)-", file)[0])
+        if sim == -1:
+            sim = 35461
+        similarity.append(sim)
+        dist_matrix_16s = pd.read_table("distance-matrix.tsv", index_col=0)
+        label_16s = list(map(lambda x: x[3], dist_matrix_16s))
+        score_16s = silhouette_score(dist_matrix_16s, label_16s, metric="precomputed")
+        sil_score_16s.append(score_16s)
+        calinski_16s.append(calinski_harabasz_score(dist_matrix_16s, label_16s))
+        davies_16s.append(davies_bouldin_score(dist_matrix_16s, label_16s))
+        #get wgs score
+        sample_lst_wgs, dist_matrix_wgs, metadata = pairwise_unifrac('profiles', alpha=alpha, show=False)
+        label_wgs = list(map(lambda x: x[3], sample_lst_wgs)) #which environment
+        score_wgs = silhouette_score(dist_matrix_wgs, label_wgs, metric="precomputed")
+        sil_score_wgs.append(score_wgs)
+        calinski_wgs.append(calinski_harabasz_score(dist_matrix_wgs, label_wgs))
+        davies_wgs.append(davies_bouldin_score(dist_matrix_wgs, label_wgs))
+        os.chdir('..')
+    os.chdir(cur_dir)
+    df_16s = pd.DataFrame(columns=col_names, index=range(len(file_lst)))
+    df_16s["data_type"] = "16s"
+    df_16s["sample_id"] = file_lst
+    df_16s["range"] = Range
+    df_16s["dissimilarity"] = similarity
+    df_16s["silhouette"] = sil_score_16s
+    df_16s["Calinski-Harabasz"] = calinski_16s
+    df_16s["Davies-Bouldin"] = davies_16s
+    df_wgs = pd.DataFrame(columns=col_names, index=range(len(file_lst)))
+    df_wgs["data_type"] = "wgs"
+    df_wgs["sample_id"] = file_lst
+    df_wgs["range"] = Range
+    df_wgs["dissimilarity"] = similarity
+    df_wgs["silhouette"] = sil_score_wgs
+    df_wgs["Calinski-Harabasz"] = calinski_wgs
+    df_wgs["Davies-Bouldin"] = davies_wgs
+    df_combined = pd.concat([df_16s, df_wgs])
+    df_combined.to_csv(save_as, sep="\t")
+    return df_combined
+
 #GTDB experiments
 def parse_taxonomy_file(tax_file, generate_all_tax=False, outfile=None):
     '''
@@ -1308,6 +1368,120 @@ def create_ncbi_GTDB_profile(node_list, outdir, filename, name_tax_dict, GTDBid_
     f.close()
     return
 
+def get_GTDB_dataframe(dir, alpha, save_as):
+    col_names = ["range", "dissimilarity", "silhouette", "Calinski-Harabasz", "Davies-Bouldin", "data_type", "sample_id"]
+    cur_dir = os.getcwd()
+    #dir_lst = os.listdir(dir)[1:]
+    dir_lst = os.listdir(dir)
+    os.chdir(dir)
+    sil_score_16s = []
+    sil_score_wgs = []
+    calinski_16s = []
+    calinski_wgs = []
+    davies_16s = []
+    davies_wgs = []
+    Range = []
+    dissimilarity = []
+    for exp_dir in dir_lst:
+        os.chdir(exp_dir)  # individual run
+        # get 16s score
+        rg = int(re.findall("r(.*)d", exp_dir)[0])
+        Range.append(rg)
+        sim = int(re.findall("d(.*)-", exp_dir)[0])
+        dissimilarity.append(sim)
+        dist_matrix_16s = pd.read_table("distance-matrix.tsv", index_col=0)
+        label_16s = list(map(lambda x: x[3], dist_matrix_16s))
+        score_16s = silhouette_score(dist_matrix_16s, label_16s, metric="precomputed")
+        print(score_16s)
+        sil_score_16s.append(score_16s)
+        calinski_16s.append(calinski_harabasz_score(dist_matrix_16s, label_16s))
+        davies_16s.append(davies_bouldin_score(dist_matrix_16s, label_16s))
+        # get wgs score
+        sample_lst_wgs, dist_matrix_wgs, metadata = pairwise_unifrac('profiles', alpha=alpha, show=False)
+        label_wgs = list(map(lambda x: x[3], sample_lst_wgs))
+        score_wgs = silhouette_score(dist_matrix_wgs, label_wgs, metric="precomputed")
+        sil_score_wgs.append(score_wgs)
+        calinski_wgs.append(calinski_harabasz_score(dist_matrix_wgs, label_wgs))
+        davies_wgs.append(davies_bouldin_score(dist_matrix_wgs, label_wgs))
+        os.chdir('..')
+    df_16s = pd.DataFrame(columns=col_names, index=range(len(dir_lst)))
+    df_16s["data_type"] = "16s"
+    df_16s["sample_id"] = dir_lst
+    df_16s["range"] = Range
+    df_16s["dissimilarity"] = dissimilarity
+    df_16s["silhouette"] = sil_score_16s
+    df_16s["Calinski-Harabasz"] = calinski_16s
+    df_16s["Davies-Bouldin"] = davies_16s
+    df_wgs = pd.DataFrame(columns=col_names, index=range(len(dir_lst)))
+    df_wgs["data_type"] = "wgs"
+    df_wgs["sample_id"] = dir_lst
+    df_wgs["range"] = Range
+    df_wgs["dissimilarity"] = dissimilarity
+    df_wgs["silhouette"] = sil_score_wgs
+    df_wgs["Calinski-Harabasz"] = calinski_wgs
+    df_wgs["Davies-Bouldin"] = davies_wgs
+    df_combined = pd.concat([df_16s, df_wgs])
+    print(df_combined)
+    os.chdir(cur_dir)
+    df_combined.to_csv(save_as, sep="\t")
+    return df_combined
+
+def get_GTDB_dataframe_2(dir, alpha, save_as):
+    col_names = ["range", "dissimilarity", "silhouette", "Calinski-Harabasz", "Davies-Bouldin", "data_type",
+                 "sample_id"]
+    cur_dir = os.getcwd()
+    dir_lst = os.listdir(dir)
+    os.chdir(dir)
+    sil_score_gtdb = []
+    sil_score_ncbi = []
+    calinski_gtdb = []
+    calinski_ncbi = []
+    davies_gtdb = []
+    davies_ncbi = []
+    Range = []
+    dissimilarity = []
+    for exp_dir in dir_lst:
+        os.chdir(exp_dir)  # individual run
+        rg = int(re.findall("r(.*)d", exp_dir)[0])
+        Range.append(rg)
+        sim = int(re.findall("d(.*)-", exp_dir)[0])
+        dissimilarity.append(sim)
+        # get gtdb score
+        sample_lst_gtdb, dist_matrix_gtdb, metadata = pairwise_unifrac('GTDB_profiles', alpha=alpha, show=False)
+        label_gtdb = list(map(lambda x: x[3], sample_lst_gtdb))
+        score_gtdb = silhouette_score(dist_matrix_gtdb, label_gtdb, metric="precomputed")
+        sil_score_gtdb.append(score_gtdb)
+        calinski_gtdb.append(calinski_harabasz_score(dist_matrix_gtdb, label_gtdb))
+        davies_gtdb.append(davies_bouldin_score(dist_matrix_gtdb, label_gtdb))
+        #get ncbi score
+        sample_lst_ncbi, dist_matrix_ncbi, metadata = pairwise_unifrac('NCBI_profiles', alpha=alpha, show=False)
+        label_ncbi = list(map(lambda x: x[3], sample_lst_ncbi))
+        score_ncbi = silhouette_score(dist_matrix_ncbi, label_ncbi, metric="precomputed")
+        sil_score_ncbi.append(score_ncbi)
+        calinski_ncbi.append(calinski_harabasz_score(dist_matrix_ncbi, label_ncbi))
+        davies_ncbi.append(davies_bouldin_score(dist_matrix_ncbi, label_ncbi))
+        os.chdir('..')
+    df_gtdb = pd.DataFrame(columns=col_names, index=range(len(dir_lst)))
+    df_gtdb["data_type"] = "GTDB"
+    df_gtdb["sample_id"] = dir_lst
+    df_gtdb["range"] = Range
+    df_gtdb["dissimilarity"] = dissimilarity
+    df_gtdb["silhouette"] = sil_score_gtdb
+    df_gtdb["Calinski-Harabasz"] = calinski_gtdb
+    df_gtdb["Davies-Bouldin"] = davies_gtdb
+    df_ncbi = pd.DataFrame(columns=col_names, index=range(len(dir_lst)))
+    df_ncbi["data_type"] = "NCBI"
+    df_ncbi["sample_id"] = dir_lst
+    df_ncbi["range"] = Range
+    df_ncbi["dissimilarity"] = dissimilarity
+    df_ncbi["silhouette"] = sil_score_ncbi
+    df_ncbi["Calinski-Harabasz"] = calinski_ncbi
+    df_ncbi["Davies-Bouldin"] = davies_ncbi
+    df_combined = pd.concat([df_gtdb, df_ncbi])
+    print(df_combined)
+    os.chdir(cur_dir)
+    df_combined.to_csv(save_as, sep="\t")
+    return df_combined
 
 #OGU experiments
 def get_ogu_vs_wgsunifrac_df(dir, save):
