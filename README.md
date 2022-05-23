@@ -58,8 +58,19 @@ python get_combined_dataframe_exp1.py -d results/exp1/testDissimilarity -a -1 -s
 5. Get boxplots from the dataframe.
 
 ```
-python generate_plot_exp1.py -f reproducibles/exp1/combined_dataframe_range.txt -x range -y silhouette -s 'reproducibles/exp1/range_vs_silhouette_boxplot.png' 
-python generate_plot_exp1.py -f reproducibles/exp1/combined_dataframe_dissimilarity.txt -x dissimilarity -y silhouette -s 'reproducibles/exp1/dissimilarity_vs_silhouette_boxplot.png'
+python generate_boxplot.py -f reproducibles/exp1/combined_dataframe_range.txt -x range -y silhouette -s 'reproducibles/exp1/range_vs_silhouette_boxplot.png' 
+python generate_boxplot.py -f reproducibles/exp1/combined_dataframe_dissimilarity.txt -x dissimilarity -y silhouette -s 'reproducibles/exp1/dissimilarity_vs_silhouette_boxplot.png'
+```
+
+### 1.2 Model-based branch length assignment
+
+The exponent of the branch length function defined can be adjusted by adjusting the -a parameter. Below is an example of setting the branch length function exponent to 0, i.e. all the branches are assigned the same length. All plots were generated in this manner.
+
+```
+python get_combined_dataframe_exp1.py -d results/exp1/testRange -a 0 -s 'results/exp1/combined_dataframe_range_bf0.txt'
+python get_combined_dataframe_exp1.py -d results/exp1/testDissimilarity -a 0 -s 'results/exp1/combined_dataframe_dissimilarity_bf0.txt'
+python generate_boxplot.py -f results/exp1/combined_dataframe_range_bf0.txt -x range -y silhouette -s 'results/exp1/range_vs_silhouette_boxplot.png' 
+python generate_boxplot.py -f results/exp1/combined_dataframe_dissimilarity_bf0.txt -x dissimilarity -y silhouette -s 'results/exp1/dissimilarity_vs_silhouette_boxplot.png'
 ```
 
 

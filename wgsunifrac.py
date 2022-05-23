@@ -974,6 +974,340 @@ def create_profile(node_list, outdir, filename):
     f.close()
     return
 
+#GTDB experiments
+def parse_taxonomy_file(tax_file, generate_all_tax=False, outfile=None):
+    '''
+
+    :param tax_file:
+    :param generate_all_tax: if set to True, generate a file with unique taxonomy names to be used for taxonkit
+    :return: a nested dictionary of taxonomy for each organism
+    '''
+    if generate_all_tax==True:
+        tax_set = set()
+    tax_dict = dict()
+    with open(tax_file, 'r') as f:
+        for line in f.readlines():
+            line = line.strip()
+            id_tax = line.split('\t')
+            tax_path = id_tax[1].split(';')
+            item_dict = dict()
+            for rank_name in tax_path:
+                rank = rank_name.split('__')[0]
+                name = rank_name.split('__')[1]
+                if generate_all_tax == True:
+                    tax_set.add(name)
+                if rank == 'd':
+                    item_dict['superkingdom'] = name
+                elif rank == 'p':
+                    item_dict['phylum'] = name
+                elif rank == 'c':
+                    item_dict['class'] = name
+                elif rank == 'o':
+                    item_dict['order'] = name
+                elif rank == 'f':
+                    item_dict['family'] = name
+                elif rank == 'g':
+                    item_dict['genus'] = name
+                elif rank == 's':
+                    item_dict['species'] = name
+                else:
+                    print("unknown rank: ", rank)
+            tax_dict[id_tax[0]] = item_dict
+    if generate_all_tax is True:
+        with open(outfile, 'w+') as f:
+            for item in tax_set:
+                f.write(item)
+                f.write('\n')
+    return tax_dict
+
+def get_name_taxid_dict(mapping_file):
+    '''
+
+    :param mapping_file: bac120_all_taxons_taxids_valid.txt
+    :return:
+    '''
+    tax_dict=dict()
+    with open(mapping_file, 'r') as f:
+        for line in f.readlines():
+            line = line.strip().split('\t')
+            name = line[0]
+            taxid = line[1]
+            tax_dict[name] = taxid
+    return tax_dict
+
+def get_GTDBid_taxid_dict(taxonomy_dict, name_taxid_dict):
+    GTDBid_taxid_dict = dict()
+    for GTDBid in taxonomy_dict:
+        name = taxonomy_dict[GTDBid]['species']
+        if name in name_taxid_dict:
+            taxid = name_taxid_dict[name]
+            GTDBid_taxid_dict[GTDBid] = taxid
+    return GTDBid_taxid_dict
+
+def create_GTDB_data(distance_dict, similarity, sample_range, num_org, num_sample):
+    node1 = random.choice(list(distance_dict.keys()))
+    node2 = distance_dict[node1][similarity]
+    print(node1)
+    print(node2)
+    data_dict = dict()
+    print(len(distance_dict.keys()))
+    env1_nodes = distance_dict[node1][:sample_range]
+    env2_nodes = distance_dict[node2][:sample_range]
+    for i, node in enumerate(env1_nodes):
+        #create Nodes, update tax
+        new_node = Node(name=node)
+        env1_nodes[i] = new_node
+    for i, node in enumerate(env2_nodes):
+        new_node = Node(name=node)
+        env2_nodes[i] = new_node
+    # create sample
+    if num_org >= sample_range:
+        for i in range(num_sample):
+            env1_key = "{}{}".format('env1sam', i)
+            env2_key = "{}{}".format('env2sam', i)
+            value1 = copy.deepcopy(env1_nodes)
+            value2 = copy.deepcopy(env2_nodes)
+            random.shuffle(value1)
+            random.shuffle(value2)
+            data_dict[env1_key] = value1
+            data_dict[env2_key] = value2
+    else:
+        for i in range(num_sample):
+            env1_key = "{}{}".format('env1sam', i)
+            env2_key = "{}{}".format('env2sam', i)
+            value1 = copy.deepcopy(random.sample(env1_nodes, num_org))
+            value2 = copy.deepcopy(random.sample(env2_nodes, num_org))
+            data_dict[env1_key] = value1
+            data_dict[env2_key] = value2
+    return data_dict
+
+def create_GTDB_biom_table(table_id, data, filename, normalize=False):
+    otus = []
+    sample_id = []  # column index
+    for key, value in list(data.items()):
+        sample_id.append(key)
+        value_name = list(map(lambda x: x.name, value))
+        otus = otus + value_name
+    otu_ids = list(set(otus))  # row index unique otus
+    print('total {} otus'.format(len(otu_ids)))
+    df = pd.DataFrame(columns=sample_id, index=otu_ids)
+    for key, value in list(data.items()):  # key = sample id, value = list of Nodes
+        for x, node in enumerate(value, 1):
+            ab = 100. / (1.5 ** x)
+            ab = ab + halfnorm.rvs()
+            df.at[node.name, key] = ab
+    df = df.fillna(.0)
+    print(df)
+    table = Table(data=df.to_numpy(), observation_ids=otu_ids, sample_ids=sample_id, observation_metadata=None,
+                  sample_metadata=None, table_id=table_id)
+    normed = table.norm(axis='sample', inplace=False)
+    for key, value in list(data.items()):
+        for node in value:
+            node.abundance = normed.get_value_by_ids(node.name, key) * 100
+    with open(filename, "w") as f:
+        if normalize:
+            normed.to_tsv(direct_io=f)
+        else:
+            table.to_tsv(direct_io=f)
+    return data
+
+def create_GTDB_profile(node_list, outdir, filename, tax_dict, name_tax_dict, GTDBid_taxid_dict):
+    '''
+    node_lst: a list of Node object with abundance. No taxid yet. Only species
+    tax_dict: a nested dict {GTDB id: {rank : scientific name}}
+    name_tax_dict: {scientific name : taxid}
+    GTDBid_taxid_dict: {GTDBid : taxid}
+    '''
+    taxpath_dict = dict()
+    ab_dict = dict() # { taxid : abundance }, all ranks
+    rank_list = ["superkingdom", "phylum", "class", "order", "family", "genus", "species"]
+    rank_dict = dict() #{ rank : set of taxids belonging to this rank}
+    for rank in rank_list:
+        rank_dict[rank] = set()
+    for node in node_list:
+        node.tax = GTDBid_taxid_dict[node.name]
+        #print(node.tax)
+        #ab_dict[node.tax] = node.abundance #added all the species level abundances
+        #print(ab_dict)
+        lineage = tax_dict[node.name] #{rank : scientific name}
+        #debug-----
+        #tax_lin = dict()
+        #for rank in lineage:
+        #    tax_lin[rank] = name_tax_dict[lineage[rank]]
+        #print(tax_lin)
+        #debug-----
+        rank_dict['species'].add(node.tax)
+        for rank in lineage:
+            taxid = name_tax_dict[lineage[rank]]
+            rank_dict[rank].add(taxid)
+            if taxid not in ab_dict:
+                ab_dict[taxid] = node.abundance #if new, abundance is the abundance of the species
+            else: #if exists, add up
+                ab_dict[taxid] += node.abundance
+    #print(ab_dict)
+    #tax path for each node
+    for node in node_list: #species
+        lineage = tax_dict[node.name]	#{rank : scientific name}
+        taxpath = lineage["superkingdom"]
+        for rank in rank_list[1:]:
+            taxpath = taxpath + "|" + lineage[rank]
+        taxpath_dict[node.tax] = taxpath
+        #add other paths in this lineage, starting from phylum
+        for rank in rank_list: #from phylum
+            taxpath = lineage["superkingdom"]
+            name = lineage[rank]
+            taxid = name_tax_dict[name]
+            rank_pos = rank_list.index(rank)
+            for other_rank in rank_list[1:rank_pos+1]:
+                taxpath = taxpath + "|" + lineage[other_rank]
+            taxpath_dict[taxid] = taxpath
+    #print(taxpath_dict)
+    #print out
+    # print
+    outfile = outdir + '/' + filename
+    f = open(outfile, "w+")
+    f.write("# Taxonomic Profiling Output\n"
+            "@SampleID:SAMPLEID\n"
+            "@Version:0.9.1\n"
+            "@Ranks:superkingdom|phylum|class|order|family|genus|species\n"
+            "@TaxonomyID:ncbi-taxonomy_DATE\n"
+            "@@TAXID\tRANK\tTAXPATH\tTAXPATHSN\tPERCENTAGE\n")
+    for rank in rank_list:
+        for taxid in rank_dict[rank]:
+            namepath = taxpath_dict[taxid]
+            namepath_lst = namepath.split('|')
+            taxpath_lst = list(map(lambda x: name_tax_dict[x], namepath_lst))
+            taxpath = "|".join(taxpath_lst)
+            f.writelines([str(taxid), "\t", rank, "\t", taxpath, "\t", namepath, "\t", str(ab_dict[taxid])])
+            f.write("\n")
+    f.close()
+    return
+
+def node_selection(distance_dict, dissimilarity, sample_range, num_org, num_sample):
+    '''
+
+    :param distance_dict: obtained from second distance matrix
+    :param dissimilarity:
+    :param sample_range:
+    :param num_org:
+    :param num_sample:
+    :return:
+    '''
+    node1 = random.choice(list(distance_dict.keys()))
+    node2 = distance_dict[node1][dissimilarity]
+    print(node1)
+    print(node2)
+    data_dict = dict()
+    print(len(distance_dict.keys()))
+    env1_nodes = distance_dict[node1][:sample_range]
+    env2_nodes = distance_dict[node2][:sample_range]
+    for i, node in enumerate(env1_nodes):
+        # create Nodes
+        new_node = Node(name=node)
+        env1_nodes[i] = new_node
+    for i, node in enumerate(env2_nodes):
+        new_node = Node(name=node)
+        env2_nodes[i] = new_node
+    # create sample
+    if num_org >= sample_range:
+        for i in range(num_sample):
+            env1_key = "{}{}".format('env1sam', i)
+            env2_key = "{}{}".format('env2sam', i)
+            value1 = copy.deepcopy(env1_nodes)
+            value2 = copy.deepcopy(env2_nodes)
+            random.shuffle(value1)
+            random.shuffle(value2)
+            data_dict[env1_key] = value1
+            data_dict[env2_key] = value2
+    else:
+        for i in range(num_sample):
+            env1_key = "{}{}".format('env1sam', i)
+            env2_key = "{}{}".format('env2sam', i)
+            value1 = copy.deepcopy(random.sample(env1_nodes, num_org))
+            value2 = copy.deepcopy(random.sample(env2_nodes, num_org))
+            data_dict[env1_key] = value1
+            data_dict[env2_key] = value2
+    # add abundance
+    for key, value in list(data_dict.items()):  # key = sample id, value = list of Nodes
+        total = 0.
+        for x, node in enumerate(value, 1):
+            ab = 100. / (1.5 ** x)
+            ab = ab + halfnorm.rvs()
+            total += ab
+            node.abundance = ab
+        for node in value: #normalize
+            node.abundance = node.abundance/total * 100.
+    return data_dict
+
+def create_ncbi_GTDB_profile(node_list, outdir, filename, name_tax_dict, GTDBid_taxid_dict):
+    '''
+    Create profile based on NCBI lineage
+    :param node_list: a list of Node objects with abundances. No taxid. Only species. Obtained from node_selection
+    :param outdir:
+    :param filename:
+    :param tax_dict:
+    :param name_tax_dict:
+    :param GTDBid_taxid_dict:
+    :return:
+    '''
+
+    ab_dict = dict() # {taxid:abundance}
+    rank_list = ["superkingdom", "phylum", "class", "order", "family", "genus", "species"]
+    rank_dict = dict()
+    taxpath_dict = dict()
+    tax_name_dict = {y:x for x, y in name_tax_dict.items()} #taxid:sci name
+    for rank in rank_list:
+        rank_dict[rank] = set()
+    for node in node_list:
+        node.tax = GTDBid_taxid_dict[node.name]
+        #print(node.tax)
+        lin = ncbi.get_lineage(node.tax) #lineage
+        lin_dict = ncbi.get_rank(lin) #id:rank
+        lin_dict_reverse = {y:x for x, y in lin_dict.items()} #rank:id
+        if node.tax != lin[-1]:
+            node.tax = lin[-1]
+        if lin_dict[node.tax] != "species":
+            node.tax = lin_dict_reverse["species"]
+        rank_dict['species'].add(node.tax)
+        for rank in rank_list:
+            taxid = lin_dict_reverse[rank]
+            rank_dict[rank].add(taxid)
+            if taxid not in ab_dict:
+                ab_dict[taxid] = node.abundance
+            else:
+                ab_dict[taxid] += node.abundance
+        taxpath = str(lin_dict_reverse["superkingdom"])
+        for rank in rank_list[1:]:
+            taxpath = taxpath + "|" + str(lin_dict_reverse[rank])
+        taxpath_dict[node.tax] = taxpath
+        for rank in rank_list:
+            taxpath = str(lin_dict_reverse["superkingdom"])
+            taxid = lin_dict_reverse[rank]
+            rank_pos = rank_list.index(rank)
+            for other_rank in rank_list[1:rank_pos+1]:
+                taxpath = taxpath + '|' + str(lin_dict_reverse[other_rank])
+            taxpath_dict[taxid] = taxpath
+
+    outfile = outdir + '/' + filename
+    f = open(outfile, "w+")
+    f.write("# Taxonomic Profiling Output\n"
+            "@SampleID:SAMPLEID\n"
+            "@Version:0.9.1\n"
+            "@Ranks:superkingdom|phylum|class|order|family|genus|species\n"
+            "@TaxonomyID:ncbi-taxonomy_DATE\n"
+            "@@TAXID\tRANK\tTAXPATH\tTAXPATHSN\tPERCENTAGE\n")
+    #print(rank_dict)
+    for rank in rank_list:
+        for taxid in rank_dict[rank]:
+            taxpath = taxpath_dict[taxid]
+            taxpath_lst = taxpath.split('|')
+            namepath_lst = list(map(lambda x: ncbi.get_taxid_translator([taxid])[taxid], taxpath_lst))
+            namepath = "|".join(namepath_lst)
+            f.writelines([str(taxid), "\t", rank, "\t", taxpath, "\t", namepath, "\t", str(ab_dict[taxid])])
+            f.write("\n")
+    f.close()
+    return
+
 
 #OGU experiments
 def get_ogu_vs_wgsunifrac_df(dir, save):
@@ -981,45 +1315,40 @@ def get_ogu_vs_wgsunifrac_df(dir, save):
     Produce a file with the following columns: range, dissimilarity, silhouette, data_type, sample_id
     param: dir containing all experiment files, which contains profiles and ogu matrix.
     '''
-    col_names = ["range", "dissimilarity", "Silhouette", "method", "sample_id"]
+    col_names = ["range", "dissimilarity", "setup", "Silhouette", "method", "sample_id"]
     cur_dir = os.getcwd()
     exp_lst = os.listdir(dir)
     if '.DS_Store' in exp_lst:
         exp_lst.remove('.DS_Store')
-    exp_lst = list(set(map(lambda x:re.findall("(.*)-", x)[0], exp_lst))) #remove -1, -2 etc. suffix
+    #exp_lst = list(set(map(lambda x:re.findall("(.*)-", x)[0], exp_lst))) #remove -1, -2 etc. suffix
     os.chdir(dir)
     sil_score_ogu = []
     sil_score_wgs = []
     Range = []
     dissimilarity = []
+    setup_list = []
     for exp in exp_lst:
         rg = int(re.findall("r(.*)d", exp)[0])
         Range.append(rg)
-        dissim = int(re.findall("d(.*)", exp)[0])
+        dissim = int(re.findall("d(.*)-", exp)[0])
         dissimilarity.append(dissim)
-        this_sil_score_ogu = []
-        this_sil_score_wgs = []
-        for i in range(5):
-            exp_repeat = exp + '-' + str(i+1)
-            os.chdir(exp_repeat)  # individual run
-            #get ogu score
-            dist_matrix_ogu = pd.read_table("exported/distance-matrix.tsv", index_col=0)
-            label_ogu = list(map(lambda x: x[3], dist_matrix_ogu)) #which environment
-            score_ogu = silhouette_score(dist_matrix_ogu, label_ogu, metric="precomputed")
-            this_sil_score_ogu.append(score_ogu)
-            #get wgs score
-            sample_lst_wgs, dist_matrix_wgs, metadata = pairwise_unifrac('profiles', alpha=-1, show=False)
-            label_wgs = list(map(lambda x: x[3], sample_lst_wgs))
-            score_wgs = silhouette_score(dist_matrix_wgs, label_wgs, metric="precomputed")
-            this_sil_score_wgs.append(score_wgs)
-            os.chdir('..')
-        ave_sil_ogu = np.mean(this_sil_score_ogu)
-        ave_sil_wgs = np.mean(this_sil_score_wgs)
-        sil_score_ogu.append(ave_sil_ogu)
-        sil_score_wgs.append(ave_sil_wgs)
+        setup = str(re.findall("(.*)-", exp)[0])
+        setup_list.append(setup)
+        os.chdir(exp)  # individual run
+        #get ogu score
+        dist_matrix_ogu = pd.read_table("exported/distance-matrix.tsv", index_col=0)
+        label_ogu = list(map(lambda x: x[3], dist_matrix_ogu)) #which environment
+        score_ogu = silhouette_score(dist_matrix_ogu, label_ogu, metric="precomputed")
+        sil_score_ogu.append(score_ogu)
+        #get wgs score
+        sample_lst_wgs, dist_matrix_wgs, metadata = pairwise_unifrac('profiles', alpha=-1, show=False)
+        label_wgs = list(map(lambda x: x[3], sample_lst_wgs))
+        score_wgs = silhouette_score(dist_matrix_wgs, label_wgs, metric="precomputed")
+        sil_score_wgs.append(score_wgs)
+        os.chdir('..')
+        #ave_sil_ogu = np.mean(this_sil_score_ogu)
+        #ave_sil_wgs = np.mean(this_sil_score_wgs)
         print(exp)
-        print("average OGU score: ", ave_sil_ogu)
-        print("average WGSUniFrac score: ", ave_sil_wgs)
     
     df_ogu = pd.DataFrame(columns=col_names, index=range(len(exp_lst)))
     df_ogu["method"] = "OGU"
@@ -1027,12 +1356,14 @@ def get_ogu_vs_wgsunifrac_df(dir, save):
     df_ogu["range"] = Range
     df_ogu["dissimilarity"] = dissimilarity
     df_ogu["Silhouette"] = sil_score_ogu
+    df_ogu["setup"] = setup_list
     df_wgs = pd.DataFrame(columns=col_names, index=range(len(exp_lst)))
     df_wgs["method"] = "WGSUniFrac"
     df_wgs["sample_id"] = exp_lst
     df_wgs["range"] = Range
     df_wgs["dissimilarity"] = dissimilarity
     df_wgs["Silhouette"] = sil_score_wgs
+    df_wgs["setup"] = setup_list
     df_combined = pd.concat([df_ogu, df_wgs])
     print(df_combined)
     os.chdir(cur_dir)
@@ -1049,6 +1380,7 @@ def get_ogu_vs_wgsunifrac_plot(dataframe_file, x, save):
     df = pd.read_table(dataframe_file, index_col=0)
     #sns.set_theme(style="ticks", palette="pastel")
     sns.lineplot(x=x, y="Silhouette", hue="method", data=df)
+    #sns.lineplot(x=x, y="Silhouette", hue="method", data=df, err_style="bars", ci="sd")
     plt.savefig(save)
 
 
@@ -1113,3 +1445,10 @@ def check_rank(id):
             print("rank %s not present" % r)
             return False
     return True
+
+def get_plot_from_file(file, x, y, palette, save):
+    df = pd.read_table(file, index_col=0)
+    print(df)
+    sns.set_theme(style="ticks", palette="pastel")
+    sns.boxplot(x=x, y=y, hue="data_type", data=df, palette=palette)
+    plt.savefig(save)
