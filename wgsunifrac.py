@@ -1557,6 +1557,65 @@ def get_ogu_vs_wgsunifrac_plot(dataframe_file, x, save):
     #sns.lineplot(x=x, y="Silhouette", hue="method", data=df, err_style="bars", ci="sd")
     plt.savefig(save)
 
+#Real data
+def get_metadata_from_real_data_partial(meta_file, profile_dir, by):
+    file_lst = os.listdir(profile_dir)
+    sample_lst = list(map(lambda x: x.split('.')[0], file_lst))
+    metadata=dict()
+    if by == "bodysites":
+        by_col = "HMgDB_sample_site_1"
+    elif by == "study":
+        by_col = "BioprojectID"
+    df = pd.read_csv(meta_file, usecols=["library_id", by_col])
+    id_sites_dict=df.set_index('library_id').to_dict()[by_col]
+    for id in sample_lst:
+        metadata[id] = {'environment': id_sites_dict[id]}
+    return metadata
+
+def just_pairwise_unifrac(dir, alpha, save_as):
+    '''
+    :param dir: directory containing the .profile files
+    :param alpha factor for branch length function  x**alpha
+    :return: a dataframe of pairwise distance matrix
+    '''
+    if save_as is None:
+        save_as = "pairwise_WGSUniFrac_matrix.csv"
+    cur_dir = os.getcwd()
+    file_lst = os.listdir(dir)  # list files in the directory
+    # print(file_lst)
+    os.chdir(dir)
+    if '.DS_Store' in file_lst:
+        file_lst.remove('.DS_Store')
+    sample_lst = [os.path.splitext(profile)[0].split('.')[0] for profile in file_lst] #e.g.env1sam10. i.e.filenames without extension
+    #print(sample_lst)
+    # enumerate sample_lst, for filling matrix
+    id_dict = dict()
+    for i, id in enumerate(file_lst):
+        id_dict[id] = i
+    # initialize matrix
+    dim = len(file_lst)
+    dist_matrix = np.zeros(shape=(dim, dim))
+    count=0
+    for pair in it.combinations(file_lst, 2): #all pairwise combinations
+        #to keep the running less boring
+        count+=1
+        if count % 100 == 0:
+            print(count)
+        id_1, id_2 = pair[0], pair[1]
+        i, j = id_dict[id_1], id_dict[id_2]
+        profile_list1 = open_profile_from_tsv(id_1, False)
+        profile_list2 = open_profile_from_tsv(id_2, False)
+        name1, metadata1, profile1 = profile_list1[0]
+        name2, metadata2, profile2 = profile_list2[0]
+        profile1 = Profile(sample_metadata=metadata1, profile=profile1, branch_length_fun=lambda x: x ** alpha)
+        profile2 = Profile(sample_metadata=metadata2, profile=profile2, branch_length_fun=lambda x: x ** alpha)
+        # (Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_no_normalize(profile2)
+        (Tint, lint, nodes_in_order, nodes_to_index, P, Q) = profile1.make_unifrac_input_and_normalize(profile2)
+        (weighted, _) = EMDUnifrac_weighted(Tint, lint, nodes_in_order, P, Q)
+        dist_matrix[i][j] = dist_matrix[j][i] = weighted
+    os.chdir(cur_dir)
+    pd.DataFrame(data=dist_matrix, index=sample_lst, columns=sample_lst).to_csv(save_as, sep="\t")
+    return dist_matrix, sample_lst
 
 ### helper functions
 def get_dist_dict(file):
@@ -1625,4 +1684,17 @@ def get_plot_from_file(file, x, y, palette, save):
     print(df)
     sns.set_theme(style="ticks", palette="pastel")
     sns.boxplot(x=x, y=y, hue="data_type", data=df, palette=palette)
+    plt.savefig(save)
+
+def get_pcoa(dist_matrix, sample_lst, metadata, plot_title, save):
+    df = pd.DataFrame.from_dict(metadata, orient='index')
+    print(len(metadata.keys()))
+    dm = DistanceMatrix(dist_matrix, sample_lst)
+    print(dm)
+    dist_pc = pcoa(dm)
+    dist_pc.plot(df=df, column="environment", cmap="Set1", title=plot_title, axis_labels=('PC1', 'PC2', 'PC3'))
+    #label = list(map(lambda x: metadata[x], sample_lst))
+    #print(label)
+    #score = silhouette_score(dist_matrix, label, metric="precomputed")
+    #print("silhouette score is: %d" % score)
     plt.savefig(save)
