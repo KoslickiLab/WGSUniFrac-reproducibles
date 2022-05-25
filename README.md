@@ -88,14 +88,67 @@ bash get_data_GTDB.sh
 mkdir results/GTDB
 mkdir results/GTDB/exp1
 python get_GTDB_input_1.py -od results/GTDB/exp1
+conda activate qiime2
 bash qiime_procedures_GTDB.sh results/GTDB/exp1/testDissimilarity 
-bash qiime_procedures_GTDB.sh results/GTDB/exp1/testRange &
+bash qiime_procedures_GTDB.sh results/GTDB/exp1/testRange 
+conda activate wgsunifrac
 python get_combined_dataframe.py -d results/GTDB/exp1/testDissimilarity -a -1 -s 'results/GTDB/exp1/testDissimilarity_combined_df.txt' -t GTDB1
-python get_combined_dataframe.py -d results/exp1/GTDB/testRange -a -1 -s 'results/GTDB/exp1/testRange_combined_df.txt' -t GTDB1
+python get_combined_dataframe.py -d results/GTDB/exp1/testRange -a -1 -s 'results/GTDB/exp1/testRange_combined_df.txt' -t GTDB1
 python generate_plot.py -d data/results/GTDB/exp1/testDissimilarity -a -1 -s "results/GTDB/exp1/testDissimilarity_combined_df.txt" 
 python generate_plot.py -d data/results/GTDB/exp1/testRange -a -1 -s "results/GTDB/exp1/testRange_combined_df.txt" 
 ```
 
 #### 1.3.2 GTDB taxonomy vs. NCBI taxonomy
+
+### 4. OGU vs. WGSUniFrac
+
+This section assumes Grinder is properly installed and working in the conda environment **wgsunifrac**.
+
+1. Data preparation.
+
+```
+source get_data_OGU.sh 
+```
+
+2. Generate reads. Computationally heavy loaded. Modify do_get_wgs_libraries_ogu.sh according to the capacity of your machine.
+
+```
+for dir in results/OGU/testRange/*; do ./do_get_wgs_libraries_ogu.sh $dir; done 
+for dir in results/OGU/testDissimilarity/*; do ./do_get_wgs_libraries_ogu.sh $dir; done
+```
+
+3. Get alignment files.
+
+```
+for dir in results/OGU/testRange/*; do ./do_get_alignment_file.sh $dir; done
+for dir in results/OGU/testDissimilarity/*; do ./do_get_alignment_file.sh $dir; done
+```
+
+4. Woltka + Qiime beta diversity analysis (OGU procedures)
+
+```
+for dir in results/OGU/testRange/*; do woltka classify -i "$dir"/bt2out -m data/nucl2g.txt -o "$dir"/ogu.biom; done
+for dir in results/OGU/testDissimilarity/*; do woltka classify -i "$dir"/bt2out -m data/nucl2g.txt -o "$dir"/ogu.biom; done
+for dir in results/OGU/testRange/*; do ./mk_metadata.sh $dir; done #get metadata file
+for dir in results/OGU/testDissimilarity/*; do ./mk_metadata.sh $dir; done #get metadata file
+for dir in results/OGU/testRange/*; do ./qiime_procedures_for_ogu.sh $dir; done 
+for dir in results/OGU/testDissimilarity/*; do ./qiime_procedures_for_ogu.sh $dir; done 
+```
+
+5. Get WGSUniFrac profiles.
+
+```
+for dir in results/OGU/testRange/*; do ./get_wgs_profiles.sh $dir; done #get profile
+for dir in results/OGU/testDissimilarity/*; do ./get_wgs_profiles.sh $dir; done #get profile
+```
+
+6. Get plots.
+
+```
+python get_dataframe_ogu_vs_wgsunifrac.py -d results/OGU/testRange -s results/ogu_wgs_dataframe_env2_range.txt 
+python get_dataframe_ogu_vs_wgsunifrac.py -d results/OGU/testDissimilarity -s results/ogu_wgs_dataframe_env2_dissimilarity.txt
+python get_ogu_wgsunifrac_plot.py -f results/OGU/ogu_wgs_dataframe_env2_range.txt -x range -s "results/ogu_vs_wgsunifrac_range_lineplot.png"
+python get_ogu_wgsunifrac_plot.py -f results/OGU/ogu_wgs_dataframe_env2_dissimilarity.txt -x range -s "results/ogu_vs_wgsunifrac_dissimilarity_lineplot.png"
+```
 
 
