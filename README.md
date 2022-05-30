@@ -100,6 +100,16 @@ python generate_plot.py -d data/results/GTDB/exp1/testRange -a -1 -s "results/GT
 
 #### 1.3.2 GTDB taxonomy vs. NCBI taxonomy
 
+### 2. On simulated data
+
+This section assumes Grinder is properly installed and working in the conda environment **wgsunifrac**.
+
+1. Get data
+
+```
+source get_simulated_data.sh
+```
+
 ### 3. On real data
 
 1. Get data.

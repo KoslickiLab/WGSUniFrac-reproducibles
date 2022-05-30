@@ -18,4 +18,15 @@ for dir in results/simulated/testRange-env2; do bash make_manifest.sh $dir; done
 for dir in results/simulated/testRange-env5; do bash make_manifest.sh $dir; done
 for dir in results/simulated/testDissimilarity-env2; do bash make_manifest.sh $dir; done
 for dir in results/simulated/testDissimilarity-env5; do bash make_manifest.sh $dir; done
+#get profiles
+for dir in results/simulated/testRange-env2; do bash get_wgs_profiles.sh $dir; done
+for dir in results/simulated/testRange-env5; do bash get_wgs_profiles.sh $dir; done
+for dir in results/simulated/testDissimilarity-env2; do bash get_wgs_profiles.sh $dir; done
+for dir in results/simulated/testDissimilarity-env5; do bash get_wgs_profiles.sh $dir; done
+#get 16s distance matrices
+conda activate qiime2
+bash get_qiime_batch.sh results/simulated/testRange-env2
+bash get_qiime_batch.sh results/simulated/testRange-env5
+bash get_qiime_batch.sh results/simulated/testDissimilarity-env2
+bash get_qiime_batch.sh results/simulated/testDissimilarity-env5
 
