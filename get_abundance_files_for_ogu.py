@@ -30,13 +30,13 @@ def main():
         os.mkdir(diss_out_dir)
     for r in ranges:
         for i in range(5):
-            dir_name = range_out_dir +'/e'+ env_num + 'r' + r + 'd1500-' + str(i)
+            dir_name = range_out_dir +'/e'+ str(env_num) + 'r' + str(r) + 'd1500-' + str(i)
             if not os.path.exists(dir_name):
                 os.mkdir(dir_name)
             wu.get_grinder_abundance_for_ogu(sample_num, org_num, dir_name, env_num, r, distance_dict, 1500)
     for dissim in dissimilarity:
         for i in range(5):
-            dir_name = diss_out_dir + '/e' + env_num + 'r500d' + dissim + '-' + (i)
+            dir_name = diss_out_dir + '/e' + str(env_num) + 'r500d' + str(dissim) + '-' + str(i)
             if not os.path.exists(dir_name):
                 os.mkdir(dir_name)
             wu.get_grinder_abundance_for_ogu(sample_num, org_num, dir_name, env_num, 500, distance_dict, dissim)

@@ -1483,7 +1483,112 @@ def get_GTDB_dataframe_2(dir, alpha, save_as):
     df_combined.to_csv(save_as, sep="\t")
     return df_combined
 
+#simulated
+def get_grinder_abundances_for_both(sample_num, org_num, out_dir, env_num, rnge, dist):
+    distance_dict = get_dist_dict('data/grinder_distance_matrix_match_primer.txt')
+    otu_acc_dict = get_dict_from_file("data/mapping_file2.txt", 0, 2)
+    
+    #if not os.path.exists(out_dir):
+    #    os.mkdir(out_dir)
+    cur_dir = os.getcwd()
+    os.chdir(out_dir)
+    if not os.path.exists('16s_abundance_files'):
+        os.mkdir('16s_abundance_files')
+    if not os.path.exists('wgs_abundance_files'):
+        os.mkdir('wgs_abundance_files')
+    # choose env nodes
+    env_nodes = []
+    for i in range(env_num):
+        print(env_nodes)
+        if len(env_nodes) == 0:
+            node1 = random.choice(list(distance_dict.keys()))  # env 1
+            env_nodes.append(node1)
+        else:
+            prev_node = env_nodes[-1]
+            #print('prev_node is', prev_node)
+            cur_node = distance_dict[prev_node][dist]
+            #print('current node is', cur_node)
+            neighbor = 1
+            while cur_node in env_nodes:
+                # if cur_node already in env_nodes, pick one close enough
+                cur_node = distance_dict[cur_node][neighbor]
+                neighbor += 1
+            env_nodes.append(cur_node)
+    # 16s abundance files
+    os.chdir('16s_abundance_files')
+    for env in range(env_num):
+        for sampl in range(sample_num):
+            file_name = 'env' + str(env) + '-sample' + str(sampl) + '.txt'
+            print(file_name)
+            sample_nodes = random.sample(distance_dict[env_nodes[env]][:rnge], org_num)
+            get_abundance_file(sample_nodes, file_name)
+    wgs_dir = '../wgs_abundance_files/'
+    for file in os.listdir():
+        wgs_file_name = wgs_dir + 'wgs-' + file
+        with open(file,'r') as f:
+            with open(wgs_file_name, 'w+') as g:
+                for line in f.readlines():
+                    (otu, abundance) = line.strip().split('\t')
+                    g.writelines([str(otu_acc_dict[otu]), '\t', abundance, '\n'])
+    os.chdir(cur_dir)
+
+def get_abundance_file(node_list, file_name, abund_fun="exp", factor=1.5):
+    '''
+    writes out a file with first column being otu and second being the relative abundance
+    :param node_list: a list of otus
+    :param abund_fun: abundance function, can be uniform or exponential
+    :return:
+    '''
+    if abund_fun == "uniform":
+        with open(file_name, 'w') as f:
+            for otu in node_list:
+                f.writelines([str(otu), '\t', str(1./len(node_list)), '\n'])
+    else:
+        abundances = []
+        for i in range(len(node_list)):
+            abundances.append(100. / (factor ** (i+1)) + halfnorm.rvs())
+        normed = list(map(lambda x: round(float(x)/sum(abundances),6), abundances))
+        with open(file_name, 'w') as f:
+            for i, otu in enumerate(node_list):
+                f.writelines([str(otu), '\t', str(normed[i]), '\n'])
+
 #OGU experiments
+def get_grinder_abundance_for_ogu(sample_num, org_num, out_dir, env_num, rnge, distance_dict, dissim):
+    if not os.path.exists(out_dir):
+        os.mkdir(out_dir)
+    os.chdir(out_dir)
+    if dissim == 3000:
+        dissim = -1
+    if not os.path.exists('abundance_files'):
+        os.mkdir('abundance_files')
+    # choose env nodes
+    env_nodes = []
+    for i in range(env_num):
+        print(env_nodes)
+        if len(env_nodes) == 0:
+            node1 = random.choice(list(distance_dict.keys()))  # env 1
+            env_nodes.append(node1)
+        else:
+            prev_node = env_nodes[-1]
+            #print('prev_node is', prev_node)
+            cur_node = distance_dict[prev_node][dissim]
+            #print('current node is', cur_node)
+            neighbor = 1
+            while cur_node in env_nodes:
+                # if cur_node already in env_nodes, pick one close enough
+                cur_node = distance_dict[cur_node][neighbor]
+                neighbor += 1
+            env_nodes.append(cur_node)
+    
+    os.chdir('abundance_files')
+    for env in range(env_num):
+        for sampl in range(sample_num):
+            file_name = 'env' + str(env) + '-sample' + str(sampl) + '.txt'
+            print(file_name)
+            sample_nodes = random.sample(distance_dict[env_nodes[env]][:rnge], org_num)
+            get_abundance_file(sample_nodes, file_name)
+    
+
 def get_ogu_vs_wgsunifrac_df(dir, save):
     '''
     Produce a file with the following columns: range, dissimilarity, silhouette, data_type, sample_id
@@ -1649,8 +1754,10 @@ def get_dict_from_file(file, key_col, val_col):
         for line in f.readlines():
             line = line.strip()
             item = line.split('\t')
-            key = item[key_col]
-            value = item[val_col]
+            #print(item)
+            if len(item) > val_col:
+                key = item[key_col]
+                value = item[val_col]
             if value[0] == ">":
                 value = value[1:]
             _dict[key] = value
